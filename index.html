@@ -436,7 +436,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);
         <div class="img-ed">
           <h4>썸네일 편집 — 315 × 177 px</h4>
           <div class="ed-wrap">
-            <canvas id="editCanvas" width="315" height="177"></canvas>
+            <canvas id="editCanvas" width="315" height="177" style="width:315px;height:177px;image-rendering:high-quality;"></canvas>
             <div class="ed-ctrl">
               <div class="ctrl"><label>좌우 위치 <span id="xVal">0</span>%</label><input type="range" min="-100" max="100" value="0" id="xSlider" oninput="updateCanvas()"></div>
               <div class="ctrl"><label>상하 위치 <span id="yVal">0</span>%</label><input type="range" min="-100" max="100" value="0" id="ySlider" oninput="updateCanvas()"></div>
@@ -715,8 +715,7 @@ function init(){
   naverId  = localStorage.getItem(LS.nid)  || '';
   naverSec = localStorage.getItem(LS.nsec) || '';
   claudeKey= localStorage.getItem(LS.ckey) || '';
-  if(naverId)   document.getElementById('naverIdInput').value = naverId;
-  if(naverSec)  document.getElementById('naverSecretInput').value = '********';
+  // 네이버 키는 서버 환경변수로 이동 - UI 입력 불필요
   if(claudeKey) document.getElementById('claudeKeyInput').value = '********';
   updateKeyBar();
   loadData(); // 저장된 데이터 복원
@@ -752,14 +751,8 @@ function showKeyStatus(msg, isErr){
 }
 
 function saveNaverKey(){
-  var id  = document.getElementById('naverIdInput').value.trim();
-  var sec = document.getElementById('naverSecretInput').value.trim();
-  if(!id || !sec){ showKeyStatus('Client ID와 Client Secret을 모두 입력해주세요.', true); return; }
-  naverId = id; naverSec = sec;
-  localStorage.setItem(LS.nid, id);
-  localStorage.setItem(LS.nsec, sec);
-  updateKeyBar();
-  showKeyStatus('✓ 네이버 API 키가 저장됐습니다.');
+  // 네이버 키는 Netlify 환경변수로 관리 - 클라이언트 저장 불필요
+  showKeyStatus('✓ 네이버 API 키는 Netlify 환경변수에서 관리됩니다.');
 }
 
 function saveClaudeKey(){
@@ -1058,33 +1051,31 @@ var MAJOR_SOURCES = ['연합뉴스','뉴스1','YTN','매일경제','한국경제
 
 async function classifyWithClaude(articles, catIdx){
   var cat = CATS[catIdx];
-  var titles = articles.map(function(a,i){ return (i+1)+'. ['+a.source+'] '+a.title; }).join('\n');
+  // 목표 건수: 원본의 60% 또는 최소 10건
+  var targetCount = Math.max(10, Math.floor(articles.length * 0.6));
 
-  var prompt = '당신은 마케팅/미디어 업계 뉴스 에디터입니다. 주간 뉴스레터용 기사를 선별합니다.\n\n'
-    + '[카테고리] '+cat.name+'\n'
-    + '[카테고리 설명] '+cat.desc+'\n'
-    + '[제외 기준] 아래 키워드가 주제인 기사는 이 카테고리에 포함하지 않음: '+cat.exclude+'\n'
-    + '[주요 언론사 우선순위] '+MAJOR_SOURCES.join(', ')+'\n\n'
-    + '## 처리 규칙 (반드시 준수)\n\n'
-    + '### 규칙 1: 동일 주제 중복 제거 (가장 중요)\n'
-    + '같은 사건/발표/이슈를 다루는 기사가 여러 개면 → 주요 언론사 1건만 keep:true, 나머지 전부 keep:false\n'
-    + '예시: "인스타그램 유료 구독 출시" 관련 기사가 5개 → 연합뉴스나 매일경제 등 1건만 남김\n'
-    + '예시: "쿠팡 실적 발표" 기사가 3개 → 1건만 남김\n\n'
-    + '### 규칙 2: 카테고리 적합성\n'
-    + '제외 기준 키워드가 주제인 기사 → keep:false\n\n'
-    + '### 규칙 3: 중요도 분류 (keep:true인 기사만)\n'
-    + '- "multi": 이번 목록에서 동일 주제로 2건 이상 보도됨 (대표 1건 선택)\n'
-    + '- "hot": 업계 파급력이 크거나 화제\n'
-    + '- "excl": 단독 보도, 특종\n'
-    + '- "normal": 일반 동향\n\n'
-    + '### 목표\n'
-    + '- 서로 다른 주제의 기사들로 구성. 동일 주제는 1건으로 압축.\n'
-    + '- 전체 기사의 40% 이상은 반드시 keep:true (과도한 제거 금지)\n'
-    + '- 카테고리에 맞는 기사는 적극적으로 keep:true\n\n'
-    + '[기사 목록 (총 '+articles.length+'건)]\n' + titles + '\n\n'
-    + '모든 '+articles.length+'개 기사에 빠짐없이 결과를 반환하세요.\n'
-    + '순수 JSON만 응답 (마크다운 없이):\n'
-    + '{"results":[{"index":1,"priority":"multi","keep":true,"reason":"선정이유"}]}';
+  var titles = articles.map(function(a,i){
+    return (i+1)+'. ['+a.source+'] '+a.title;
+  }).join('\n');
+
+  var prompt =
+    '당신은 마케팅/미디어 업계 주간 뉴스레터 에디터입니다.\n\n'
+    +'[카테고리] '+cat.name+'\n'
+    +'[카테고리 설명] '+cat.desc+'\n'
+    +'[제외 기준] 이 주제의 기사는 제외: '+cat.exclude+'\n'
+    +'[선호 언론사] '+MAJOR_SOURCES.join(', ')+'\n\n'
+    +'아래 '+articles.length+'개 기사 중에서 뉴스레터에 실을 상위 '+targetCount+'건을 선별하세요.\n\n'
+    +'선별 기준:\n'
+    +'1. 동일 주제 기사가 여러 건이면 → 선호 언론사 1건만 선택 (나머지 제외)\n'
+    +'2. 카테고리와 무관한 기사 제외\n'
+    +'3. 중요도 태그:\n'
+    +'   multi: 이 목록에서 동일 주제가 2건 이상 보도됨\n'
+    +'   hot: 업계 파급력 크거나 화제\n'
+    +'   excl: 단독/특종\n'
+    +'   normal: 일반 동향\n\n'
+    +'[기사 목록]\n'+titles+'\n\n'
+    +'반드시 '+targetCount+'건을 선별해서 아래 JSON 형식으로만 응답하세요:\n'
+    +'{"selected":[{"index":1,"priority":"multi","reason":"선정이유"}]}';
 
   try{
     var res = await fetch('https://api.anthropic.com/v1/messages',{
@@ -1099,45 +1090,42 @@ async function classifyWithClaude(articles, catIdx){
     var s=txt.indexOf('{'), e=txt.lastIndexOf('}');
     if(s===-1||e===-1) throw new Error('JSON 없음');
     var parsed = JSON.parse(txt.slice(s,e+1));
+    var selected = parsed.selected || [];
 
-    var keepMap = {}; // index -> result
-    (parsed.results||[]).forEach(function(r){ if(r.index) keepMap[r.index] = r; });
-
-    var filtered = [];
-    var dropped  = [];
-    articles.forEach(function(a, i){
-      var r = keepMap[i+1];
-      if(r && (r.keep === false || r.priority === 'drop')){
-        dropped.push(a); // 제거 대상
-      } else {
-        // keep:true 이거나 Claude가 언급 안 한 기사 → 유지
-        if(r){ a.priority = r.priority || 'normal'; a.reason = r.reason || ''; }
-        filtered.push(a);
+    var result = [];
+    selected.forEach(function(r){
+      var idx = r.index - 1;
+      if(idx >= 0 && idx < articles.length){
+        articles[idx].priority = r.priority || 'normal';
+        articles[idx].reason   = r.reason   || '';
+        result.push(articles[idx]);
       }
     });
 
-    // 안전장치: 너무 많이 제거되면 dropped에서 복구
-    // → 최소 min(10, 원본의 40%) 는 보장
-    var minKeep = Math.max(10, Math.floor(articles.length * 0.4));
-    if(filtered.length < minKeep){
-      console.warn('[Claude] 결과 너무 적음('+filtered.length+'건), dropped에서 복구');
-      // dropped를 언론사 점수 순으로 정렬해서 부족분 채움
-      dropped.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
-      var need = minKeep - filtered.length;
-      for(var i=0; i<need && i<dropped.length; i++){
-        dropped[i].priority = 'normal';
-        filtered.push(dropped[i]);
+    // 안전장치: Claude 응답이 너무 적으면 원본 언론사 점수순으로 보완
+    if(result.length < 5){
+      console.warn('[Claude] 선별 결과 부족('+result.length+'건), 원본으로 보완');
+      var resultIds = result.map(function(a){ return a.id; });
+      var remaining = articles.filter(function(a){ return resultIds.indexOf(a.id) === -1; });
+      remaining.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
+      var need = Math.max(targetCount, 10) - result.length;
+      for(var i=0; i<need && i<remaining.length; i++){
+        remaining[i].priority = 'normal';
+        result.push(remaining[i]);
       }
     }
 
-    // priority 순 정렬
     var order = {hot:0, excl:1, multi:2, normal:3};
-    filtered.sort(function(a,b){ return (order[a.priority]||3)-(order[b.priority]||3); });
-    console.log('[Claude] 최종 '+filtered.length+'건 (원본 '+articles.length+'건, '+dropped.length+'건 drop)');
-    return filtered;
+    result.sort(function(a,b){ return (order[a.priority]||3)-(order[b.priority]||3); });
+    console.log('[Claude] '+cat.name+' 최종 '+result.length+'건 선별 (원본 '+articles.length+'건)');
+    return result;
+
   } catch(e){
     console.warn('[Claude 분류 실패]', e.message);
-    return articles; // 실패 시 원본 전체 반환
+    // 실패 시 언론사 점수순으로 상위 targetCount건 반환
+    var fallback = articles.slice();
+    fallback.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
+    return fallback.slice(0, targetCount);
   }
 }
 
@@ -1304,24 +1292,46 @@ function loadThumb(id){
 }
 
 function updateCanvas(){
-  var c=document.getElementById('editCanvas'),ctx=c.getContext('2d');
+  var c=document.getElementById('editCanvas');
   var x=parseInt(document.getElementById('xSlider').value);
   var y=parseInt(document.getElementById('ySlider').value);
   var z=parseInt(document.getElementById('zSlider').value)/100;
   document.getElementById('xVal').textContent=x;
   document.getElementById('yVal').textContent=y;
   document.getElementById('zVal').textContent=Math.round(z*100);
-  ctx.clearRect(0,0,315,177);
+
+  // devicePixelRatio 적용으로 레티나/고해상도 화질 개선
+  var dpr = window.devicePixelRatio || 1;
+  var W = 315, H = 177;
+  c.width  = W * dpr;
+  c.height = H * dpr;
+  c.style.width  = W + 'px';
+  c.style.height = H + 'px';
+
+  var ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0,0,W,H);
   if(!editImg) return;
-  var b=Math.max(315/editImg.naturalWidth,177/editImg.naturalHeight);
-  var s=b*z,sw=editImg.naturalWidth*s,sh=editImg.naturalHeight*s;
-  ctx.drawImage(editImg,(315-sw)/2+(x/100)*sw*.5,(177-sh)/2+(y/100)*sh*.5,sw,sh);
+
+  var b=Math.max(W/editImg.naturalWidth, H/editImg.naturalHeight);
+  var s=b*z, sw=editImg.naturalWidth*s, sh=editImg.naturalHeight*s;
+  ctx.drawImage(editImg,(W-sw)/2+(x/100)*sw*.5,(H-sh)/2+(y/100)*sh*.5,sw,sh);
 }
 
 function downloadThumb(){
+  // 저장은 항상 정확히 315x177px로
+  var src = document.getElementById('editCanvas');
+  var out = document.createElement('canvas');
+  out.width = 315; out.height = 177;
+  var ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, 315, 177);
   var l=document.createElement('a');
   l.download='thumb_'+Date.now()+'.png';
-  l.href=document.getElementById('editCanvas').toDataURL('image/png');
+  l.href=out.toDataURL('image/png');
   l.click();
 }
 
@@ -1332,8 +1342,14 @@ function downloadAllThumbs(){
     img.onload=function(){
       var c=document.createElement('canvas'); c.width=315; c.height=177;
       var ctx=c.getContext('2d');
-      var s=Math.max(315/img.naturalWidth,177/img.naturalHeight);
-      ctx.drawImage(img,(315-img.naturalWidth*s)/2,(177-img.naturalHeight*s)/2,img.naturalWidth*s,img.naturalHeight*s);
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality='high';
+      // cover 방식: 비율 유지하며 315x177 꽉 채우기
+      var iw=img.naturalWidth, ih=img.naturalHeight;
+      var scale=Math.max(315/iw, 177/ih);
+      var sw=iw*scale, sh=ih*scale;
+      var ox=(315-sw)/2, oy=(177-sh)/2;
+      ctx.drawImage(img, ox, oy, sw, sh);
       var l=document.createElement('a');
       l.download=CATS[a.catIdx].short+'_'+String(i+1).padStart(2,'0')+'.png';
       l.href=c.toDataURL('image/png'); l.click();
