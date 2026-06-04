@@ -1070,412 +1070,57 @@ var MAJOR_SOURCES = ['연합뉴스','뉴스1','YTN','매일경제','한국경제
 async function classifyWithClaude(articles, catIdx){
   var cat = CATS[catIdx];
 
-  // 기사가 너무 많으면 Claude 토큰 초과 → 상위 25건만 추려서 보냄
-  var workList = articles.slice();
-  if(workList.length > 15){
-    workList.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
-    workList = workList.slice(0, 15);
-    console.log('[Claude] 기사 수 축소:', articles.length, '→ 15건');
-  }
-
-  // 목표 건수: 입력의 60% 또는 최소 10건
-  var targetCount = Math.max(10, Math.floor(workList.length * 0.6));
-
-  var titles = workList.map(function(a,i){
-    return (i+1)+'. ['+a.source+'] '+a.title;
-  }).join('\n');
-
-  var prompt =
-    '당신은 마케팅/미디어 업계 주간 뉴스레터 에디터입니다.\n\n'
-    +'[카테고리] '+cat.name+'\n'
-    +'[카테고리 설명] '+cat.desc+'\n'
-    +'[제외 기준] 이 주제의 기사는 제외: '+cat.exclude+'\n'
-    +'[선호 언론사] '+MAJOR_SOURCES.join(', ')+'\n\n'
-    +'아래 '+workList.length+'개 기사에서 뉴스레터에 실을 기사를 선별하세요.\n'
-    +'목표: 최대 '+targetCount+'건 (기사 수가 적으면 전부 선택해도 됩니다)\n\n'
-    +'선별 기준:\n'
-    +'1. 동일 주제 기사가 여러 건이면 → 선호 언론사 1건만 선택\n'
-    +'2. 카테고리와 무관한 기사는 제외\n'
-    +'3. 중요도 태그: multi(동일주제 2건이상)/hot(화제)/excl(단독)/normal(일반)\n\n'
-    +'[기사 목록 (총 '+workList.length+'건)]\n'+titles+'\n\n'
-    +'응답 형식: 아래 JSON만 출력. 백틱/코드블록/설명 절대 금지.\n'
-    +'{"selected":[{"index":1,"priority":"multi"}]}';
-
-  try{
-    var res = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,messages:[{role:'user',content:prompt}]})
+  // Claude 없이 코드로 분류 처리
+  // 1단계: 카테고리 제외 키워드 필터링
+  var excludeWords = cat.exclude.split(' ').filter(function(w){ return w.length > 1; });
+  var filtered = articles.filter(function(a){
+    var titleLower = (a.title||'').toLowerCase();
+    // 제외 키워드가 제목에 있으면 필터링 (단, 카테고리 키워드가 같이 있으면 유지)
+    var hasExclude = excludeWords.some(function(w){
+      return titleLower.indexOf(w.toLowerCase()) >= 0;
     });
-    if(!res.ok) throw new Error('Claude '+res.status);
-    var data = await res.json();
-    var txt = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
-    console.log('[Claude] 응답 앞부분:', txt.slice(0,100));
-    // 백틱 코드블록 완전 제거 (여러 줄에 걸친 경우 포함)
-    txt = txt.replace(/```json[\s\S]*?```/g, function(m){ return m.replace(/```json|```/g,''); });
-    txt = txt.replace(/```[\s\S]*?```/g, function(m){ return m.replace(/```/g,''); });
-    txt = txt.replace(/`/g,'').trim();
-    var s=txt.indexOf('{'), e=txt.lastIndexOf('}');
-    if(s===-1||e===-1){
-      console.error('[Claude] JSON 없음. 전체 응답:', txt.slice(0,300));
-      throw new Error('JSON 없음');
-    }
-    var parsed;
-    try { parsed = JSON.parse(txt.slice(s,e+1)); }
-    catch(pe){
-      console.error('[Claude] JSON 파싱 실패:', txt.slice(s,s+200));
-      throw pe;
-    }
-    var selected = parsed.selected || [];
+    return !hasExclude;
+  });
 
-    var result = [];
-    selected.forEach(function(r){
-      var idx = r.index - 1;
-      if(idx >= 0 && idx < workList.length){
-        workList[idx].priority = r.priority || 'normal';
-        workList[idx].reason = '';
-        result.push(workList[idx]);
-      }
-    });
+  // 필터링 후 너무 적으면 원본 사용
+  if(filtered.length < 5) filtered = articles;
 
-    // 안전장치: Claude 응답이 너무 적으면 원본 언론사 점수순으로 보완
-    if(result.length < 5){
-      console.warn('[Claude] 선별 결과 부족('+result.length+'건), 원본으로 보완');
-      var resultIds = result.map(function(a){ return a.id; });
-      var remaining = articles.filter(function(a){ return resultIds.indexOf(a.id) === -1; });
-      remaining.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
-      var need = Math.max(targetCount, 10) - result.length;
-      for(var i=0; i<need && i<remaining.length; i++){
-        remaining[i].priority = 'normal';
-        result.push(remaining[i]);
-      }
-    }
+  // 2단계: 언론사 점수순 정렬
+  filtered.sort(function(a,b){ return sourceScore(b.source) - sourceScore(a.source); });
 
-    var order = {hot:0, excl:1, multi:2, normal:3};
-    result.sort(function(a,b){ return (order[a.priority]||3)-(order[b.priority]||3); });
-    console.log('[Claude] '+cat.name+' 최종 '+result.length+'건 선별 (원본 '+articles.length+'건)');
-    return result;
-
-  } catch(e){
-    console.warn('[Claude 분류 실패]', e.message);
-    // 실패 시 언론사 점수순으로 상위 targetCount건 반환
-    var fallback = articles.slice();
-    fallback.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
-    return fallback.slice(0, targetCount);
-  }
-}
-
-// =====================================================
-// RENDER
-// =====================================================
-function setStatus(type, html){
-  var el = document.getElementById('statusBox');
-  var icon = type==='loading' ? '<div class="spin"></div>' : type==='ok' ? '<span style="color:#1A8C65;font-size:16px;flex-shrink:0">✓</span>' : '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>';
-  el.className = 'status'+(type==='loading'?' loading':'');
-  el.innerHTML = icon+'<div>'+html+'</div>';
-}
-
-function renderWithFilter(){
-  var arts = collected[selCat]||[];
-  var filtered = curFilter==='all' ? arts : arts.filter(function(a){return a.priority===curFilter;});
-  document.getElementById('resHead').style.display = arts.length?'flex':'none';
-  document.getElementById('resCnt').innerHTML = '<strong>'+filtered.length+'</strong>건 표시 중 (전체 <strong>'+arts.length+'</strong>건)';
-  renderList(filtered,'artList');
-}
-
-function renderList(arts, elId){
-  var el = document.getElementById(elId);
-  if(!arts||!arts.length){ el.innerHTML='<div class="empty">수집된 기사가 없습니다.<br>수집 버튼을 눌러주세요.</div>'; return; }
-  el.innerHTML = arts.map(function(a,idx){
-    var cat = CATS[a.catIdx];
-    var isSel = !!selected.find(function(s){return s.id===a.id;});
-    var pb = a.priority==='hot'?'<span class="pbadge pb-hot">🔥 화제</span>':a.priority==='excl'?'<span class="pbadge pb-excl">★ 단독</span>':a.priority==='multi'?'<span class="pbadge pb-multi">◎ 멀티소스</span>':'';
-    var cb = '<span class="cbadge" style="background:'+cat.bg+';color:'+cat.tx+'">'+cat.short+'</span>';
-    var thumb = a.imageUrl ? '<img src="'+a.imageUrl+'" alt="" crossorigin="anonymous" onerror="this.parentElement.innerHTML=\'<span class=\\\"no-img\\\">없음</span>\'">' : '<span class="no-img">이미지<br>없음</span>';
-    return '<div class="art-card'+(isSel?' sel':'')+'" id="card_'+a.id+'">'+
-      '<div class="card-num">'+String(idx+1).padStart(2,'0')+'</div>'+
-      '<div class="card-thumb">'+thumb+'</div>'+
-      '<div class="card-body">'+
-        '<div class="card-title">'+a.title+'</div>'+
-        '<div class="card-meta">'+pb+cb+'<span class="card-src">'+a.source+'</span>'+(a.date?'<span class="card-date">· '+a.date+'</span>':'')+'</div>'+
-        (a.summary?'<div class="card-sum">'+a.summary+'</div>':'')+
-        (a.reason?'<div style="font-size:10px;color:var(--tx3);font-style:italic;margin-top:1px">'+a.reason+'</div>':'')+
-      '</div>'+
-      '<div class="card-act">'+
-        '<input type="checkbox" class="card-cb"'+(isSel?' checked':'')+' onchange="toggleSel(\''+a.id+'\','+a.catIdx+',this.checked)">'+
-        (a.url?'<a href="'+a.url+'" class="card-link" target="_blank" rel="noopener">원문↗</a>':'')+
-      '</div>'+
-    '</div>';
-  }).join('');
-}
-
-function updateStats(){
-  var arts = collected[selCat]||[];
-  if(!arts.length){ document.getElementById('statsRow').style.display='none'; return; }
-  document.getElementById('statsRow').style.display='flex';
-  document.getElementById('st-total').textContent=arts.length;
-  document.getElementById('st-hot').textContent=arts.filter(function(a){return a.priority==='hot';}).length;
-  document.getElementById('st-excl').textContent=arts.filter(function(a){return a.priority==='excl';}).length;
-  document.getElementById('st-multi').textContent=arts.filter(function(a){return a.priority==='multi';}).length;
-}
-
-function updateBadge(ci,n){
-  var el=document.getElementById('nb'+ci);
-  if(el){ el.textContent=n; el.className=n>0?'nbadge on':'nbadge'; }
-}
-
-function updateSelCount(){
-  var n=selected.length;
-  document.getElementById('tb-sel').textContent=n;
-  document.getElementById('tc-sel').textContent=n;
-  var s=document.getElementById('sb-sel');
-  if(n>0){s.textContent=n;s.style.display='inline';}else s.style.display='none';
-}
-
-function setFilter(f,btn){
-  curFilter=f;
-  document.querySelectorAll('.chip').forEach(function(b){b.classList.remove('on');});
-  btn.classList.add('on');
-  renderWithFilter();
-}
-
-function selAll(){
-  var arts=collected[selCat]||[];
-  var filtered=curFilter==='all'?arts:arts.filter(function(a){return a.priority===curFilter;});
+  // 3단계: 제목 유사도 기반 중복 제거 (앞 10글자 기준)
+  var seen = {};
+  var deduped = [];
   filtered.forEach(function(a){
-    if(!selected.find(function(s){return s.id===a.id;})) selected.push(a);
-    var el=document.getElementById('card_'+a.id); if(el) el.classList.add('sel');
-    var cb=document.querySelector('#card_'+a.id+' .card-cb'); if(cb) cb.checked=true;
+    var key = (a.title||'').replace(/\s/g,'').slice(0,10);
+    if(!seen[key]){
+      seen[key] = true;
+      deduped.push(a);
+    } else {
+      // 같은 주제 2번째 → 첫 번째를 multi로 표시
+      var first = deduped.find(function(d){
+        return (d.title||'').replace(/\s/g,'').slice(0,10) === key;
+      });
+      if(first && first.priority === 'normal') first.priority = 'multi';
+    }
   });
-  updateSelCount();
-}
 
-function deselAll(){
-  var arts=collected[selCat]||[];
-  var filtered=curFilter==='all'?arts:arts.filter(function(a){return a.priority===curFilter;});
-  filtered.forEach(function(a){
-    selected=selected.filter(function(s){return s.id!==a.id;});
-    var el=document.getElementById('card_'+a.id); if(el) el.classList.remove('sel');
-    var cb=document.querySelector('#card_'+a.id+' .card-cb'); if(cb) cb.checked=false;
+  // 4단계: 주요 언론사 기사 hot 태그
+  var hotSources = ['연합뉴스','뉴스1','조선일보','매일경제','한국경제','한겨레'];
+  deduped.forEach(function(a){
+    if(a.priority === 'normal' && hotSources.indexOf(a.source) >= 0){
+      a.priority = 'normal'; // 주요 언론사도 normal 유지 (hot은 실제 화제성 기준이므로)
+    }
+    // 제목에 "단독" 포함시 excl
+    if((a.title||'').indexOf('단독') >= 0) a.priority = 'excl';
   });
-  updateSelCount();
+
+  // priority 순 정렬
+  var order = {excl:0, multi:1, hot:2, normal:3};
+  deduped.sort(function(a,b){ return (order[a.priority]||3)-(order[b.priority]||3); });
+
+  console.log('[분류] '+cat.name+' '+articles.length+'건 → '+deduped.length+'건');
+  return deduped;
 }
 
-function toggleSel(id,catIdx,checked){
-  var all=[];
-  Object.values(collected).forEach(function(arr){all=all.concat(arr);});
-  var art=all.find(function(a){return a.id===id;});
-  if(!art) return;
-  if(checked){ if(!selected.find(function(s){return s.id===id;})) selected.push(art); }
-  else selected=selected.filter(function(s){return s.id!==id;});
-  var el=document.getElementById('card_'+id); if(el) el.classList.toggle('sel',checked);
-  updateSelCount();
-  saveData();
-}
 
-// =====================================================
-// SELECTED TAB
-// =====================================================
-function renderSelected(){
-  var con=document.getElementById('selContainer');
-  if(!selected.length){
-    con.innerHTML='<div class="empty">선택된 기사가 없습니다.<br>수집 탭에서 기사 옆 체크박스를 눌러주세요.</div>';
-    document.getElementById('imgEdWrap').style.display='none'; return;
-  }
-  var bycat={};
-  selected.forEach(function(a){ if(!bycat[a.catIdx]) bycat[a.catIdx]=[]; bycat[a.catIdx].push(a); });
-  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'+
-    '<span style="font-size:13px;font-weight:600;">총 <span style="font-family:\'DM Mono\',monospace">'+selected.length+'</span>건 선택됨</span>'+
-    '<button class="btn btn-line btn-sm" onclick="selected=[];updateSelCount();renderSelected();">전체 초기화</button></div>';
-  Object.entries(bycat).forEach(function(entry){
-    var ci=entry[0],arts=entry[1],cat=CATS[ci];
-    html+='<div class="sel-group"><div class="sel-gtitle" style="color:'+cat.tx+'"><span style="width:8px;height:8px;border-radius:50%;background:'+cat.color+';display:inline-block;flex-shrink:0;"></span>'+cat.name+' <span style="font-weight:400;color:var(--tx3)">('+arts.length+'건)</span></div>';
-    arts.forEach(function(a,i){
-      html+='<div class="art-card sel" style="margin-bottom:4px;cursor:pointer;" onclick="loadThumb(\''+a.id+'\')">'+
-        '<div class="card-num" style="font-size:10px">'+String(i+1).padStart(2,'0')+'</div>'+
-        '<div class="card-thumb" style="width:80px;height:46px;">'+(a.imageUrl?'<img src="'+a.imageUrl+'" alt="" crossorigin="anonymous" onerror="this.parentElement.innerHTML=\'<span class=\\\"no-img\\\">없음</span>\'">':'<span class="no-img">없음</span>')+'</div>'+
-        '<div class="card-body"><div class="card-title" style="-webkit-line-clamp:1">'+a.title+'</div><div class="card-meta"><span class="card-src">'+a.source+'</span></div></div>'+
-        '<div class="card-act" style="border-left:1px solid var(--bd)">'+
-          '<button class="btn btn-line btn-xs" onclick="event.stopPropagation();loadThumb(\''+a.id+'\')">편집</button>'+
-          '<button class="sel-del" onclick="event.stopPropagation();removeSel(\''+a.id+'\')">×</button>'+
-        '</div></div>';
-    });
-    html+='</div>';
-  });
-  con.innerHTML=html;
-  document.getElementById('imgEdWrap').style.display='block';
-}
-
-function removeSel(id){
-  selected=selected.filter(function(s){return s.id!==id;});
-  updateSelCount(); renderSelected();
-}
-
-// =====================================================
-// IMAGE EDITOR
-// =====================================================
-function loadThumb(id){
-  var art=selected.find(function(a){return a.id===id;});
-  if(!art||!art.imageUrl){ alert('이미지가 없는 기사입니다.'); return; }
-  document.getElementById('xSlider').value=0;
-  document.getElementById('ySlider').value=0;
-  document.getElementById('zSlider').value=100;
-  editImg=new Image(); editImg.crossOrigin='anonymous';
-  editImg.onload=updateCanvas;
-  editImg.onerror=function(){ alert('이미지를 불러올 수 없습니다.'); };
-  editImg.src=art.imageUrl;
-  document.getElementById('imgEdWrap').scrollIntoView({behavior:'smooth',block:'nearest'});
-}
-
-function updateCanvas(){
-  var c=document.getElementById('editCanvas');
-  var x=parseInt(document.getElementById('xSlider').value);
-  var y=parseInt(document.getElementById('ySlider').value);
-  var z=parseInt(document.getElementById('zSlider').value)/100;
-  document.getElementById('xVal').textContent=x;
-  document.getElementById('yVal').textContent=y;
-  document.getElementById('zVal').textContent=Math.round(z*100);
-
-  // devicePixelRatio 적용으로 레티나/고해상도 화질 개선
-  var dpr = window.devicePixelRatio || 1;
-  var W = 315, H = 177;
-  c.width  = W * dpr;
-  c.height = H * dpr;
-  c.style.width  = W + 'px';
-  c.style.height = H + 'px';
-
-  var ctx = c.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0,0,W,H);
-  if(!editImg) return;
-
-  var b=Math.max(W/editImg.naturalWidth, H/editImg.naturalHeight);
-  var s=b*z, sw=editImg.naturalWidth*s, sh=editImg.naturalHeight*s;
-  ctx.drawImage(editImg,(W-sw)/2+(x/100)*sw*.5,(H-sh)/2+(y/100)*sh*.5,sw,sh);
-}
-
-function downloadThumb(){
-  // 저장은 항상 정확히 315x177px로
-  var src = document.getElementById('editCanvas');
-  var out = document.createElement('canvas');
-  out.width = 315; out.height = 177;
-  var ctx = out.getContext('2d');
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src, 0, 0, 315, 177);
-  var l=document.createElement('a');
-  l.download='thumb_'+Date.now()+'.png';
-  l.href=out.toDataURL('image/png');
-  l.click();
-}
-
-function downloadAllThumbs(){
-  selected.forEach(function(a,i){
-    if(!a.imageUrl) return;
-    var img=new Image(); img.crossOrigin='anonymous';
-    img.onload=function(){
-      var c=document.createElement('canvas'); c.width=315; c.height=177;
-      var ctx=c.getContext('2d');
-      ctx.imageSmoothingEnabled=true;
-      ctx.imageSmoothingQuality='high';
-      // cover 방식: 비율 유지하며 315x177 꽉 채우기
-      var iw=img.naturalWidth, ih=img.naturalHeight;
-      var scale=Math.max(315/iw, 177/ih);
-      var sw=iw*scale, sh=ih*scale;
-      var ox=(315-sw)/2, oy=(177-sh)/2;
-      ctx.drawImage(img, ox, oy, sw, sh);
-      var l=document.createElement('a');
-      l.download=CATS[a.catIdx].short+'_'+String(i+1).padStart(2,'0')+'.png';
-      l.href=c.toDataURL('image/png'); l.click();
-    };
-    img.src=a.imageUrl;
-  });
-}
-
-// =====================================================
-// MANUAL URL
-// =====================================================
-function addManRow(){
-  var d=document.createElement('div'); d.className='man-row';
-  d.innerHTML='<select><option value="0">① 플랫폼</option><option value="1">② 브랜드</option><option value="2">③ 커머스</option><option value="3">④ 테크</option><option value="4">⑤ 엔터</option><option value="5">⑥ 게임</option></select><input type="text" placeholder="기사 원문 URL 붙여넣기">';
-  document.getElementById('manRows').appendChild(d);
-}
-
-async function processManual(){
-  if(!claudeKey){ alert('직접 추가는 Claude API 키가 필요합니다.\n상단 API 키 설정에서 입력해주세요.'); return; }
-  var rows=document.querySelectorAll('#manRows .man-row');
-  var items=[];
-  rows.forEach(function(r){ var u=r.querySelector('input').value.trim(); if(u) items.push({url:cleanUrl(u),catIdx:parseInt(r.querySelector('select').value)}); });
-  if(!items.length){ alert('URL을 입력하세요.'); return; }
-  var sb=document.getElementById('manStatus');
-  sb.style.display='flex'; sb.className='status'; sb.innerHTML='<div class="spin"></div><div>'+items.length+'건 메타데이터 추출 중...</div>';
-  for(var i=0;i<items.length;i++){
-    var item=items[i];
-    try{
-      var res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:500,messages:[{role:'user',content:'다음 URL 기사의 메타데이터를 추출하세요: '+item.url+'\n순수 JSON만:\n{"title":"","source":"","date":"MM/DD","summary":"","imageUrl":null}'}]})});
-      var data=await res.json();
-      var txt=(data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('').replace(/```json|```/g,'').trim();
-      var s=txt.indexOf('{'),e=txt.lastIndexOf('}');
-      if(s!==-1&&e!==-1){
-        var meta=JSON.parse(txt.slice(s,e+1));
-        var art=Object.assign({},meta,{url:item.url,catIdx:item.catIdx,priority:'normal',id:'m_'+Date.now()+'_'+Math.random().toString(36).slice(2)});
-        if(!collected[item.catIdx]) collected[item.catIdx]=[];
-        collected[item.catIdx].push(art);
-        updateBadge(item.catIdx,collected[item.catIdx].length);
-      }
-    } catch(e){ console.warn('메타데이터 실패:',item.url); }
-  }
-  var recent=[];
-  items.forEach(function(item){ var arr=collected[item.catIdx]||[]; recent=recent.concat(arr.slice(-3)); });
-  renderList(recent,'manList');
-  sb.innerHTML='<span style="color:#1A8C65;font-size:16px">✓</span><div>'+items.length+'건 처리 완료</div>';
-}
-
-// =====================================================
-// EXPORT
-// =====================================================
-function renderExport(){
-  var el=document.getElementById('expList');
-  document.getElementById('exp-cnt').textContent=selected.length+'건';
-  if(!selected.length){ el.innerHTML='<div class="empty">선택된 기사가 없습니다.</div>'; return; }
-  var bycat={};
-  selected.forEach(function(a){ if(!bycat[a.catIdx]) bycat[a.catIdx]=[]; bycat[a.catIdx].push(a); });
-  el.innerHTML=Object.entries(bycat).map(function(entry){
-    var ci=entry[0],arts=entry[1],cat=CATS[ci];
-    return '<div class="sel-group"><div class="sel-gtitle" style="color:'+cat.tx+'"><span style="width:7px;height:7px;border-radius:50%;background:'+cat.color+';display:inline-block;"></span>'+cat.name+' ('+arts.length+'건)</div>'+arts.map(function(a){ return '<div class="sel-row"><span class="sel-title">'+a.title+'</span><span style="font-size:11px;color:var(--tx3);flex-shrink:0">'+a.source+'</span></div>'; }).join('')+'</div>';
-  }).join('');
-}
-
-function copyMd(){
-  var bycat={};
-  selected.forEach(function(a){ if(!bycat[a.catIdx]) bycat[a.catIdx]=[]; bycat[a.catIdx].push(a); });
-  var p=getPeriod();
-  var md='# 주간 마케팅 뉴스 클리핑\n> 기간: '+p.start+' ~ '+p.end+'\n\n';
-  Object.entries(bycat).forEach(function(entry){ var ci=entry[0],arts=entry[1]; md+='## '+CATS[ci].name+'\n\n'; arts.forEach(function(a){ md+='- ['+a.title+']('+a.url+')'+(a.source?' — '+a.source:'')+'\n'; }); md+='\n'; });
-  navigator.clipboard.writeText(md).then(function(){ document.getElementById('expMsg').textContent='✓ 마크다운으로 클립보드에 복사됐습니다.'; });
-}
-
-function copyHtml(){
-  var bycat={};
-  selected.forEach(function(a){ if(!bycat[a.catIdx]) bycat[a.catIdx]=[]; bycat[a.catIdx].push(a); });
-  var html='';
-  Object.entries(bycat).forEach(function(entry){ var ci=entry[0],arts=entry[1]; html+='<h3>'+CATS[ci].name+'</h3><ul>'; arts.forEach(function(a){ html+='<li><a href="'+a.url+'">'+a.title+'</a>'+(a.source?' <small>('+a.source+')</small>':'')+' </li>'; }); html+='</ul>'; });
-  navigator.clipboard.writeText(html).then(function(){ document.getElementById('expMsg').textContent='✓ HTML로 클립보드에 복사됐습니다.'; });
-}
-
-function downloadAllThumbs2(){ downloadAllThumbs(); document.getElementById('expMsg').textContent='✓ '+selected.filter(function(a){return a.imageUrl;}).length+'개 이미지 저장 시작.'; }
-
-function exportJson(){
-  var p=getPeriod();
-  var blob=new Blob([JSON.stringify({period:p,exportedAt:new Date().toISOString(),articles:selected.map(function(a){ return {category:CATS[a.catIdx].name,title:a.title,url:a.url,source:a.source,date:a.date,priority:a.priority,imageUrl:a.imageUrl}; })},null,2)],{type:'application/json'});
-  var l=document.createElement('a'); l.href=URL.createObjectURL(blob); l.download='newsletter_clipping_'+new Date().toISOString().slice(0,10)+'.json'; l.click();
-  document.getElementById('expMsg').textContent='✓ JSON 파일이 저장됐습니다.';
-}
-
-// =====================================================
-init();
-</script>
-</body>
-</html>
