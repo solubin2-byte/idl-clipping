@@ -479,78 +479,75 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);
 var CATS = [
   {
     name:'플랫폼 & 미디어', short:'플랫폼', color:'var(--c1)', bg:'var(--c1b)', tx:'var(--c1t)',
-    // 각 쿼리는 "검색어 -제외어" 형태로 네이버 검색에 그대로 사용
     queries:[
-      '메타 페이스북 인스타그램 광고',
-      '구글 유튜브 광고 플랫폼',
+      '메타 인스타그램 광고 정책',
+      '구글 유튜브 광고 플랫폼 정책',
       '네이버 카카오 광고 플랫폼',
-      '당근마켓 토스 광고 미디어',
-      '프로그래매틱 광고 미디어렙 DSP'
+      '당근마켓 토스 광고',
+      '프로그래매틱 미디어렙 DSP'
     ],
-    // Claude 후처리 시 전달되는 카테고리 설명
-    desc:'메타(FB/IG), 구글(유튜브 등), 네이버, 카카오, 당근, 토스 등 주요 광고 플랫폼 및 미디어렙·미디어 업계 소식. 광고 상품 출시, 알고리즘 변경, MAU 동향, 미디어 M&A 등 포함.',
-    // 이 카테고리와 무관한 키워드가 포함된 기사 제거 기준
-    exclude:'게임 신작 모바일게임 콘솔 e스포츠 연예인 아이돌 드라마 영화 쇼핑 쿠팡 무신사 배터리 자율주행'
+    desc:'메타(FB/IG), 구글(유튜브), 네이버, 카카오, 당근, 토스 등 광고 플랫폼 소식. 광고 상품·알고리즘·MAU·미디어 M&A.',
+    exclude:'게임 모바일게임 아이돌 드라마 영화 이커머스 e커머스 쇼핑 쿠팡 배송 유통 편의점 반도체 배터리 자율주행 부동산 주식 코인'
   },
   {
     name:'브랜드 & 마케팅', short:'브랜드', color:'var(--c2)', bg:'var(--c2b)', tx:'var(--c2t)',
     queries:[
-      '브랜드 마케팅 캠페인 광고',
-      '소비트렌드 소비자 조사 리포트',
-      'MZ세대 알파세대 소비 트렌드',
-      '광고 크리에이티브 캠페인 수상',
-      '마케팅 전략 브랜딩 소비자'
+      '브랜드 마케팅 캠페인',
+      '소비트렌드 소비자조사 리포트',
+      'MZ세대 소비 트렌드 라이프스타일',
+      '광고 크리에이티브 수상 캠페인',
+      '마케팅 전략 브랜딩'
     ],
-    desc:'소비/문화 트렌드, 소비자 라이프스타일 변화, 소비자 조사 결과, 마케팅 트렌드, 삼성·신세계·삼양 등 다양한 브랜드의 마케팅·광고 캠페인 관련 뉴스.',
-    exclude:'게임 신작 모바일게임 반도체 배터리 자율주행 쿠팡 이커머스 아이돌 신곡 공연 팝업스토어'
+    desc:'소비/문화 트렌드, 소비자 조사, 브랜드 마케팅·광고 캠페인 관련 뉴스.',
+    exclude:'게임 모바일게임 반도체 배터리 자율주행 아이돌 신곡 공연 이커머스 쿠팡 부동산 주식'
   },
   {
     name:'커머스 & 유통', short:'커머스', color:'var(--c3)', bg:'var(--c3b)', tx:'var(--c3t)',
     queries:[
-      '쿠팡 네이버쇼핑 이커머스 유통',
-      '무신사 지그재그 에이블리 패션몰',
-      '알리익스프레스 테무 쉬인 직구',
-      '편의점 CU GS25 세븐일레븐 유통',
-      '이커머스 물류 풀필먼트 온라인쇼핑'
+      '쿠팡 네이버쇼핑 이커머스',
+      '무신사 지그재그 에이블리 패션',
+      '알리익스프레스 테무 직구',
+      '편의점 CU GS25 유통',
+      '이커머스 물류 풀필먼트'
     ],
-    desc:'쿠팡·네이버플러스스토어·지마켓·지그재그·무신사·알리·테무 등 커머스 플랫폼, 편의점·면세점·대형마트 등 오프라인 유통사 동향, 물류·배송 전략, 이커머스 시장 통계.',
-    exclude:'게임 반도체 배터리 아이돌 공연 영화 OTT 마케팅 캠페인 광고'
+    desc:'쿠팡·네이버쇼핑·무신사·알리·테무 등 커머스 플랫폼, 편의점·면세점 유통사 동향.',
+    exclude:'게임 반도체 아이돌 드라마 OTT 부동산 주식 코인'
   },
   {
     name:'테크 & AI', short:'테크·AI', color:'var(--c4)', bg:'var(--c4b)', tx:'var(--c4t)',
     queries:[
-      'AI 인공지능 생성AI LLM 챗GPT',
-      '반도체 메모리 HBM 삼성 SK하이닉스',
-      '자율주행 전기차 배터리 테슬라',
-      '빅테크 AI 스타트업 투자',
-      'AI 규제 정책 로봇 기술 산업'
+      'AI 인공지능 생성AI LLM',
+      '반도체 메모리 HBM 삼성 하이닉스',
+      '자율주행 전기차 배터리',
+      '빅테크 AI 스타트업',
+      'AI 규제 로봇 기술'
     ],
-    desc:'AI·LLM·생성AI, 반도체·배터리·자율주행·메모리, 빅테크(애플·구글·MS·메타) 기술 전략, 국내 AI 스타트업, 테크 규제 이슈 등.',
-    exclude:'게임 신작 모바일게임 아이돌 드라마 영화 쿠팡 이커머스 광고 캠페인'
+    desc:'AI·LLM·생성AI, 반도체·배터리·자율주행, 빅테크 전략, AI 스타트업, 테크 규제.',
+    exclude:'게임 모바일게임 아이돌 드라마 영화 이커머스 쿠팡 마케팅 캠페인 부동산'
   },
   {
     name:'콘텐츠 & 엔터', short:'엔터', color:'var(--c5)', bg:'var(--c5b)', tx:'var(--c5t)',
     queries:[
-      'K팝 아이돌 신곡 컴백 뮤비',
+      'K팝 아이돌 신곡 컴백',
       'OTT 넷플릭스 드라마 영화 흥행',
-      '팝업스토어 전시 공연 뮤지컬',
-      'KBO 프로야구 스포츠 중계',
-      '엔터테인먼트 하이브 SM JYP YG'
+      '팝업스토어 전시 공연',
+      'KBO 프로야구 스포츠',
+      '하이브 SM JYP YG 엔터'
     ],
-    desc:'K팝 아이돌 신곡·컴백·뮤비, 영화·드라마·OTT 흥행, 팝업스토어·전시·공연, 스포츠(야구·축구·e스포츠), 엔터사(하이브·SM·JYP·YG) 전략 및 엔터 시장 동향.',
-    exclude:'게임 신작 모바일게임 넥슨 크래프톤 반도체 이커머스 쿠팡 광고 마케팅'
+    desc:'K팝·아이돌·OTT·드라마·영화·공연·팝업·스포츠·엔터사 동향.',
+    exclude:'게임 모바일게임 넥슨 크래프톤 반도체 이커머스 부동산 주식'
   },
   {
     name:'게임', short:'게임', color:'var(--c6)', bg:'var(--c6b)', tx:'var(--c6t)',
     queries:[
-      '모바일게임 신작 출시 흥행',
-      '넥슨 크래프톤 넷마블 엔씨소프트',
-      '게임 매출 순위 흥행 글로벌',
-      'LOL 리그오브레전드 e스포츠 대회',
-      '게임 시장 콘솔 PC 동향'
+      '모바일게임 신작 출시',
+      '넥슨 크래프톤 넷마블 엔씨',
+      '게임 매출 흥행',
+      'e스포츠 리그 대회',
+      '게임 시장 콘솔 PC'
     ],
-    desc:'주요 게임사(넥슨·크래프톤·넷마블·NC·스마일게이트 등) 신작 출시·매출·전략, 모바일·PC·콘솔 게임 흥행, e스포츠 대회, 게임 시장 동향.',
-    exclude:'엔터 아이돌 드라마 영화 OTT 이커머스 반도체 광고 마케팅'
+    desc:'게임사 신작·매출·전략, 모바일·PC·콘솔 흥행, e스포츠, 게임 시장 동향.',
+    exclude:'아이돌 드라마 영화 OTT 이커머스 반도체 마케팅 광고 부동산'
   }
 ];
 
@@ -1058,9 +1055,22 @@ async function classifyWithClaude(articles, catIdx){
   var excludeWords = (cat.exclude||'').split(' ').filter(function(w){ return w.length > 1; });
   var filtered = articles.filter(function(a){
     var t = (a.title||'').toLowerCase();
-    return !excludeWords.some(function(w){ return t.indexOf(w.toLowerCase()) >= 0; });
+    var s = (a.summary||'').toLowerCase();
+    // 제목+요약 기준 제외 키워드 체크
+    var combined = t + ' ' + s;
+    var hasExclude = excludeWords.some(function(w){
+      return combined.indexOf(w.toLowerCase()) >= 0;
+    });
+    return !hasExclude;
   });
-  if(filtered.length < 5) filtered = articles.slice();
+  // 필터링 후 너무 적으면 제목만 기준으로 재시도
+  if(filtered.length < 3){
+    filtered = articles.filter(function(a){
+      var t = (a.title||'').toLowerCase();
+      return !excludeWords.some(function(w){ return t.indexOf(w.toLowerCase()) >= 0; });
+    });
+  }
+  if(filtered.length < 3) filtered = articles.slice();
 
   // 2단계: 언론사 점수순 정렬
   filtered.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
