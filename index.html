@@ -285,18 +285,11 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);
         <div class="key-group-title">
           <span class="tag tag-n">NAVER</span>
           네이버 검색 API
-          <a href="https://developers.naver.com" target="_blank" style="font-size:10px;color:var(--tx3);">키 발급↗</a>
         </div>
-        <div class="key-inputs">
-          <div class="key-field">
-            <span>Client ID</span>
-            <input type="text" id="naverIdInput" placeholder="Client ID">
-          </div>
-          <div class="key-field">
-            <span>Client Secret</span>
-            <input type="password" id="naverSecretInput" placeholder="Client Secret">
-          </div>
-          <button class="key-save" onclick="saveNaverKey()">저장</button>
+        <div style="font-size:12px;color:var(--tx2);background:var(--sur2);padding:8px 12px;border-radius:var(--rs);line-height:1.6;">
+          ✓ Netlify 환경변수로 관리됩니다<br>
+          <span style="font-size:11px;color:var(--tx3);">Netlify 대시보드 → Site settings → Environment variables<br>
+          NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 설정</span>
         </div>
       </div>
 
@@ -742,12 +735,12 @@ function updateKeyBar(){
   var bar = document.getElementById('keyBar');
   var msg = document.getElementById('keyBarMsg');
   var arrow = keyPanelOpen ? ' ▴' : ' ▾';
-  if(naverId && naverSec){
+  if(claudeKey){
     bar.className = 'key-bar ok';
-    msg.textContent = (claudeKey ? '✓ 네이버 + Claude 연결됨' : '✓ 네이버 API 연결됨') + arrow;
+    msg.textContent = '✓ Claude 연결됨' + arrow;
   } else {
     bar.className = 'key-bar warn';
-    msg.textContent = 'API 키 설정' + arrow;
+    msg.textContent = 'Claude API 키 설정' + arrow;
   }
 }
 
@@ -806,19 +799,20 @@ function goTab(name){
 // NAVER API
 // =====================================================
 function naverUrl(q, n){
-  var api = 'https://openapi.naver.com/v1/search/news.json?query='+encodeURIComponent(q)+'&display='+(n||10)+'&start=1&sort=date';
-  return 'https://corsproxy.io/?url='+encodeURIComponent(api);
+  // Netlify Function 경유로 CORS 없이 네이버 API 호출
+  var query = encodeURIComponent(q);
+  var display = n || 10;
+  return '/.netlify/functions/naver-search?query='+query+'&display='+display;
 }
 
 function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
 
 async function naverSearch(q, n){
-  if(!naverId || !naverSec) throw new Error('네이버 API 키가 없습니다. 상단 API 키 설정을 눌러 입력해주세요.');
-  var res = await fetch(naverUrl(q,n), {
-    headers:{'X-Naver-Client-Id':naverId,'X-Naver-Client-Secret':naverSec}
-  });
+  // 네이버 API 키는 Netlify 환경변수에 저장 - 프론트에서 키 불필요
+  var res = await fetch(naverUrl(q,n));
   if(!res.ok) throw new Error('네이버 API 오류 '+res.status);
   var data = await res.json();
+  if(data.error) throw new Error(data.error);
   return data.items || [];
 }
 
@@ -914,7 +908,6 @@ function cleanUrl(url){
 // =====================================================
 async function fetchNews(){
   if(fetching) return;
-  if(!naverId||!naverSec){ alert('네이버 API 키를 먼저 입력해주세요.\n상단의 "API 키 설정"을 클릭하세요.'); return; }
   fetching = true;
   var cat = CATS[selCat];
   var extra = document.getElementById('extraKw').value.trim();
@@ -990,7 +983,6 @@ async function fetchNews(){
 
 async function fetchAllCats(){
   if(fetching) return;
-  if(!naverId||!naverSec){ alert('네이버 API 키를 먼저 입력해주세요.\n상단의 "API 키 설정"을 클릭하세요.'); return; }
   fetching = true;
   document.getElementById('btn-fetch').disabled = true;
   document.getElementById('btn-all').disabled = true;
