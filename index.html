@@ -712,7 +712,7 @@ async function fetchImagesForArticles(arts){
       done++;
     }));
     // 진행상황 표시
-    setStatus('loading', '이미지 수집 중... <span style="font-family:'DM Mono',monospace">'+done+'/'+total+'</span>');
+    setStatus('loading', '이미지 수집 중... <span style="font-family:monospace">'+done+'/'+total+'</span>');
     await sleep(100);
   }
 }
