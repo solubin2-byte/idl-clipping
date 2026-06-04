@@ -646,8 +646,14 @@ function loadData(){
     var d = localStorage.getItem(LS_DATA);
     var s = localStorage.getItem(LS_SEL);
     var p = localStorage.getItem(LS_PERIOD);
-    if(d){ collected = JSON.parse(d); }
-    if(s){ selected  = JSON.parse(s); }
+    if(d){
+      collected = JSON.parse(d);
+      console.log('[loadData] collected 복원:', Object.keys(collected).length, '카테고리');
+    }
+    if(s){
+      selected = JSON.parse(s);
+      console.log('[loadData] selected 복원:', selected.length, '건');
+    }
     if(p){
       var period = JSON.parse(p);
       document.getElementById('periodStart').value = period.start;
@@ -967,16 +973,14 @@ async function fetchNews(){
   var multi=deduped.filter(function(a){return a.priority==='multi';}).length;
   setStatus('ok','<strong>'+cat.name+'</strong> 수집 완료 — 총 <strong>'+deduped.length+'건</strong> &nbsp;<span style="font-size:12px;color:var(--tx3)">🔥화제 '+hot+' · ★단독 '+excl+' · ◎멀티소스 '+multi+'</span>');
 
-  // 이미지 백그라운드 수집 (Netlify 배포 환경에서만 동작)
-  if(window.location.hostname !== 'localhost' && !window.location.protocol.startsWith('file')){
-    fetchImagesForArticles(deduped).then(function(){
-      setStatus('ok','<strong>'+cat.name+'</strong> 수집 + 이미지 수집 완료 — <strong>'+deduped.length+'건</strong>');
-      renderWithFilter();
-      saveData();
-    });
-  } else {
-    saveData();
-  }
+  // 수집 즉시 저장
+  saveData();
+  // 이미지 백그라운드 수집 (비동기, 저장과 별개로 진행)
+  fetchImagesForArticles(deduped).then(function(){
+    setStatus('ok','<strong>'+cat.name+'</strong> 수집 + 이미지 수집 완료 — <strong>'+deduped.length+'건</strong>');
+    renderWithFilter();
+    saveData(); // 이미지 수집 후 재저장
+  });
 
   document.getElementById('btn-fetch').disabled = false;
   document.getElementById('btn-all').disabled = false;
@@ -1033,18 +1037,16 @@ async function fetchAllCats(){
   renderWithFilter(); updateStats();
   setStatus('ok','전체 카테고리 수집 완료 — 총 <strong>'+total+'건</strong> &nbsp;<span style="font-size:12px;color:var(--tx3)">이미지 수집 중...</span>');
 
-  // 전체 기사 이미지 백그라운드 수집
-  if(window.location.hostname !== 'localhost' && !window.location.protocol.startsWith('file')){
-    var allArts = Object.values(collected).reduce(function(acc,a){return acc.concat(a);}, []);
-    fetchImagesForArticles(allArts).then(function(){
-      var imgCount = allArts.filter(function(a){return a.imageUrl;}).length;
-      setStatus('ok','전체 수집 완료 — <strong>'+total+'건</strong> &nbsp;<span style="font-size:12px;color:var(--tx3)">이미지 '+imgCount+'건 수집됨</span>');
-      renderWithFilter();
-      saveData();
-    });
-  } else {
-    saveData();
-  }
+  // 수집 즉시 저장
+  saveData();
+  // 이미지 백그라운드 수집 (비동기)
+  var allArts = Object.values(collected).reduce(function(acc,a){return acc.concat(a);}, []);
+  fetchImagesForArticles(allArts).then(function(){
+    var imgCount = allArts.filter(function(a){return a.imageUrl;}).length;
+    setStatus('ok','전체 수집 완료 — <strong>'+total+'건</strong> &nbsp;<span style="font-size:12px;color:var(--tx3)">이미지 '+imgCount+'건 수집됨</span>');
+    renderWithFilter();
+    saveData(); // 이미지 수집 후 재저장
+  });
 
   document.getElementById('btn-fetch').disabled = false;
   document.getElementById('btn-all').disabled = false;
