@@ -1072,10 +1072,10 @@ async function classifyWithClaude(articles, catIdx){
 
   // 기사가 너무 많으면 Claude 토큰 초과 → 상위 25건만 추려서 보냄
   var workList = articles.slice();
-  if(workList.length > 25){
+  if(workList.length > 15){
     workList.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
-    workList = workList.slice(0, 25);
-    console.log('[Claude] 기사 수 축소:', articles.length, '→ 25건');
+    workList = workList.slice(0, 15);
+    console.log('[Claude] 기사 수 축소:', articles.length, '→ 15건');
   }
 
   // 목표 건수: 입력의 60% 또는 최소 10건
@@ -1096,20 +1096,16 @@ async function classifyWithClaude(articles, catIdx){
     +'선별 기준:\n'
     +'1. 동일 주제 기사가 여러 건이면 → 선호 언론사 1건만 선택\n'
     +'2. 카테고리와 무관한 기사는 제외\n'
-    +'3. 중요도 태그 (선택한 기사에 부여):\n'
-    +'   multi: 동일 주제가 2건 이상 보도됨\n'
-    +'   hot: 업계 파급력 크거나 화제\n'
-    +'   excl: 단독/특종\n'
-    +'   normal: 일반 동향\n\n'
+    +'3. 중요도 태그: multi(동일주제 2건이상)/hot(화제)/excl(단독)/normal(일반)\n\n'
     +'[기사 목록 (총 '+workList.length+'건)]\n'+titles+'\n\n'
-    +'응답 형식: 반드시 아래 JSON만 출력. 백틱, 코드블록, 설명 텍스트 절대 금지.\n'
-    +'{"selected":[{"index":1,"priority":"multi","reason":"선정이유"}]}';
+    +'응답 형식: 아래 JSON만 출력. 백틱/코드블록/설명 절대 금지.\n'
+    +'{"selected":[{"index":1,"priority":"multi"}]}';
 
   try{
     var res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:6000,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:8000,messages:[{role:'user',content:prompt}]})
     });
     if(!res.ok) throw new Error('Claude '+res.status);
     var data = await res.json();
@@ -1137,7 +1133,7 @@ async function classifyWithClaude(articles, catIdx){
       var idx = r.index - 1;
       if(idx >= 0 && idx < workList.length){
         workList[idx].priority = r.priority || 'normal';
-        workList[idx].reason   = r.reason   || '';
+        workList[idx].reason = '';
         result.push(workList[idx]);
       }
     });
