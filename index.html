@@ -801,10 +801,19 @@ function naverUrl(q, n){
 function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
 
 async function naverSearch(q, n){
-  // 네이버 API 키는 Netlify 환경변수에 저장 - 프론트에서 키 불필요
   var res = await fetch(naverUrl(q,n));
-  if(!res.ok) throw new Error('네이버 API 오류 '+res.status);
-  var data = await res.json();
+  var text = await res.text();
+  // 응답 텍스트 로깅 (디버깅)
+  if(!res.ok){
+    console.error('[naverSearch] HTTP '+res.status+':', text.slice(0,200));
+    throw new Error('네이버 API 오류 '+res.status+': '+text.slice(0,100));
+  }
+  var data;
+  try { data = JSON.parse(text); }
+  catch(e) {
+    console.error('[naverSearch] JSON 파싱 실패:', text.slice(0,200));
+    throw new Error('응답 파싱 실패: '+text.slice(0,100));
+  }
   if(data.error) throw new Error(data.error);
   return data.items || [];
 }
@@ -1004,7 +1013,7 @@ async function fetchAllCats(){
         var raw = await naverSearch(queries[qi], 10);
         var arts = filterPeriod(raw).map(function(item,ii){ return makeArticle(item,ci,qi,ii); });
         all = all.concat(arts);
-      } catch(e){ console.warn('[cat'+ci+' q'+qi+']',e.message); }
+      } catch(e){ console.error('[cat'+ci+' q"'+queries[qi]+'"]',e.message); }
       await sleep(200);
     }
 
@@ -1051,10 +1060,19 @@ var MAJOR_SOURCES = ['연합뉴스','뉴스1','YTN','매일경제','한국경제
 
 async function classifyWithClaude(articles, catIdx){
   var cat = CATS[catIdx];
-  // 목표 건수: 원본의 60% 또는 최소 10건
-  var targetCount = Math.max(10, Math.floor(articles.length * 0.6));
 
-  var titles = articles.map(function(a,i){
+  // 기사가 너무 많으면 Claude 토큰 초과 → 상위 25건만 추려서 보냄
+  var workList = articles.slice();
+  if(workList.length > 25){
+    workList.sort(function(a,b){ return sourceScore(b.source)-sourceScore(a.source); });
+    workList = workList.slice(0, 25);
+    console.log('[Claude] 기사 수 축소:', articles.length, '→ 25건');
+  }
+
+  // 목표 건수: 입력의 60% 또는 최소 10건
+  var targetCount = Math.max(10, Math.floor(workList.length * 0.6));
+
+  var titles = workList.map(function(a,i){
     return (i+1)+'. ['+a.source+'] '+a.title;
   }).join('\n');
 
@@ -1064,7 +1082,7 @@ async function classifyWithClaude(articles, catIdx){
     +'[카테고리 설명] '+cat.desc+'\n'
     +'[제외 기준] 이 주제의 기사는 제외: '+cat.exclude+'\n'
     +'[선호 언론사] '+MAJOR_SOURCES.join(', ')+'\n\n'
-    +'아래 '+articles.length+'개 기사 중에서 뉴스레터에 실을 상위 '+targetCount+'건을 선별하세요.\n\n'
+    +'아래 '+workList.length+'개 기사 중에서 뉴스레터에 실을 상위 '+targetCount+'건을 선별하세요.\n\n'
     +'선별 기준:\n'
     +'1. 동일 주제 기사가 여러 건이면 → 선호 언론사 1건만 선택 (나머지 제외)\n'
     +'2. 카테고리와 무관한 기사 제외\n'
@@ -1081,24 +1099,33 @@ async function classifyWithClaude(articles, catIdx){
     var res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:6000,messages:[{role:'user',content:prompt}]})
     });
     if(!res.ok) throw new Error('Claude '+res.status);
     var data = await res.json();
     var txt = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+    console.log('[Claude] 응답 앞부분:', txt.slice(0,100));
     txt = txt.replace(/```json|```/g,'').trim();
     var s=txt.indexOf('{'), e=txt.lastIndexOf('}');
-    if(s===-1||e===-1) throw new Error('JSON 없음');
-    var parsed = JSON.parse(txt.slice(s,e+1));
+    if(s===-1||e===-1){
+      console.error('[Claude] JSON 없음. 전체 응답:', txt.slice(0,300));
+      throw new Error('JSON 없음');
+    }
+    var parsed;
+    try { parsed = JSON.parse(txt.slice(s,e+1)); }
+    catch(pe){
+      console.error('[Claude] JSON 파싱 실패:', txt.slice(s,s+200));
+      throw pe;
+    }
     var selected = parsed.selected || [];
 
     var result = [];
     selected.forEach(function(r){
       var idx = r.index - 1;
-      if(idx >= 0 && idx < articles.length){
-        articles[idx].priority = r.priority || 'normal';
-        articles[idx].reason   = r.reason   || '';
-        result.push(articles[idx]);
+      if(idx >= 0 && idx < workList.length){
+        workList[idx].priority = r.priority || 'normal';
+        workList[idx].reason   = r.reason   || '';
+        result.push(workList[idx]);
       }
     });
 
